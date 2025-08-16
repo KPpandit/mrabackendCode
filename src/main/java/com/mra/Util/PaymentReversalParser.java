@@ -42,22 +42,20 @@ public class PaymentReversalParser {
 
         String invoiceId = getValue(text, "Receipt No\\.?\\s*[:\\s]*([\\d/]+)");
         invoiceNode.put("invoiceIdentifier", "R_" + invoiceId);
-        invoiceNode.put("invoiceRefIdentifier", "R_" + invoiceId);
+        invoiceNode.put("invoiceRefIdentifier",  invoiceId);
         invoiceNode.put("previousNoteHash", "prevNote");
-        invoiceNode.put("reasonStated", "Recharge Reversal Credit Note");
+        invoiceNode.put("reasonStated", "Payment Reversal Receipt ~ 0");
         invoiceNode.put("salesTransactions", "CASH");
 
-        // Extract and format amounts (positive, 5 decimals)
         String vat = getAmount(text, 1);
         String amtWoVat = getAmount(text, 0);
         String total = getAmount(text, 2);
-        String paid = formatAmount(getValue(text, "Paid Total:.*?Rs\\s*(-?\\d+\\.\\d{1,10})"));
+        String paid = formatAmount(getValue(text, "Paid Total:?\\s*Rs\\s*(-?\\d+\\.\\d{1,10})"));
 
         invoiceNode.put("totalVatAmount", vat);
         invoiceNode.put("totalAmtWoVatCur", amtWoVat);
         invoiceNode.put("totalAmtWoVatMur", amtWoVat);
         invoiceNode.put("invoiceTotal", total);
-//        invoiceNode.put("totalAmountPayable", total);
         invoiceNode.put("discountTotalAmount", formatAmount("0.0"));
         invoiceNode.put("totalAmtPaid", paid);
 
@@ -76,7 +74,8 @@ public class PaymentReversalParser {
 
         // Buyer
         ObjectNode buyer = mapper.createObjectNode();
-        buyer.put("name", getValue(text, "Customer Name\\s*:?\\s*([\\w\\s]+)"));
+        String buyerName = getBuyerName(text);
+        buyer.put("name", buyerName);
         buyer.put("tan", "");
         buyer.put("brn", "");
         buyer.put("businessAddr", "Port Louis");
@@ -102,9 +101,12 @@ public class PaymentReversalParser {
         item.put("amtWoVatMur", amtWoVat);
         item.put("vatAmt", vat);
         item.put("totalPrice", total);
-        item.put("previousBalance", "0");
-        itemList.add(item);
 
+        // ✅ Extract post balance from: Date: Rs 261.140 (Credit)
+        String postBalance = getValue(text, "Date:?\\s*Rs\\s*(-?\\d+\\.\\d{1,10})\\s*\\(Credit\\)");
+        item.put("previousBalance", formatAmount(postBalance));
+
+        itemList.add(item);
         invoiceNode.set("itemList", itemList);
         rootArray.add(invoiceNode);
 
@@ -128,8 +130,8 @@ public class PaymentReversalParser {
 
     private static String formatAmount(String raw) {
         try {
-            double value = Math.abs(Double.parseDouble(raw)); // ✅ Remove negative sign
-            return String.format("%.5f", value);              // ✅ Keep 5 decimals always
+            double value = Math.abs(Double.parseDouble(raw));
+            return String.format("%.5f", value);
         } catch (NumberFormatException e) {
             return "0.00000";
         }
@@ -141,11 +143,31 @@ public class PaymentReversalParser {
         if (!date.isEmpty() && !time.isEmpty()) {
             return date.replace("/", "") + " " + time;
         }
-        return "20250101 00:00:00"; // fallback
+        return "20250101 00:00:00";
     }
 
+    private static String getBuyerName(String text) {
+        String[] lines = text.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].toLowerCase().contains("customer name")) {
+                int j = i + 1;
+                // Skip emails
+                while (j < lines.length && lines[j].contains("@")) {
+                    j++;
+                }
+                if (j < lines.length) {
+                    String name = lines[j].trim();
+                    String[] words = name.split("\\s+");
+                    return words.length >= 2 ? words[0] + " " + words[1] : words[0];
+                }
+            }
+        }
+        return "Unknown";
+    }
+
+
     public static void main(String[] args) {
-        String path = "C:/Users/Krishna Purohit/Downloads/payment_reversal_09b46caa-efb7-441a-b259-b2d448de2ce4.pdf";
+        String path = "C:\\home\\Processed_Files\\einv\\payment_reversal\\DONE_09b46caa-efb7-441a-b259-b2d448de2ce4.pdf";
         String json = parseToJson(path);
         System.out.println(json);
     }

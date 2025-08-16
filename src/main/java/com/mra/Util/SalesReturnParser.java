@@ -45,15 +45,16 @@ public class SalesReturnParser {
         invoiceNode.put("currency", "MUR");
 
         invoiceNode.put("invoiceIdentifier", "R_" + getValue(text, "Invoice No\\.:\\s*([\\d/]+)"));
-        invoiceNode.put("invoiceRefIdentifier", "R_" + getValue(text, "Invoice No\\.:\\s*([\\d/]+)"));
+        invoiceNode.put("invoiceRefIdentifier",  getValue(text, "Invoice No\\.:\\s*([\\d/]+)"));
 
         invoiceNode.put("previousNoteHash", "prevNote");
-        invoiceNode.put("reasonStated", "Sales return credit note");
+        invoiceNode.put("reasonStated", "Sales return ~ 0");
         invoiceNode.put("salesTransactions", "CASH");
         invoiceNode.put("totalVatAmount", "0.00");
         invoiceNode.put("totalAmtWoVatCur", getLastRsAmount(text, "Total Amount Due before VAT"));
         invoiceNode.put("totalAmtWoVatMur", getLastRsAmount(text, "Total Amount Due before VAT"));
         invoiceNode.put("invoiceTotal", getLastRsAmount(text, "Total Amount Due with VAT"));
+//        invoiceNode.put("invoiceTotal", getLastRsAmount(text, "Total Amount Paid"));
         invoiceNode.put("discountTotalAmount", "0.00");
         invoiceNode.put("totalAmtPaid", getLastRsAmount(text, "Total Amount Paid"));
         invoiceNode.put("dateTimeInvoiceIssued", formatDate(getValue(text, "Invoice Date:\\s*(\\d{2}/\\d{2}/\\d{4})")));
@@ -97,7 +98,7 @@ public class SalesReturnParser {
         item.put("amtWoVatMur", getLastRsAmount(text, "Total Amount Due before VAT"));
         item.put("vatAmt", "0.00");
         item.put("totalPrice", getLastRsAmount(text, "Return Amount"));
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
         itemList.add(item);
 
         invoiceNode.set("itemList", itemList);

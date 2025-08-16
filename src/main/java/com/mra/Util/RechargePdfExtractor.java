@@ -132,7 +132,7 @@ public class RechargePdfExtractor {
         item.put("amtWoVatMur", paymentRemark);
         item.put("vatAmt", "0.00");
         item.put("totalPrice", paymentRemark);
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
         root.putArray("itemList").add(item);
 
         return root;

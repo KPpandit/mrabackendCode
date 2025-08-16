@@ -12,7 +12,7 @@ import java.util.regex.*;
 public class ReciptVATParser {
 
     public static void main(String[] args) {
-        String pdfPath = "C:\\Users\\Krishna Purohit\\Downloads\\VATINVOICE\\VATInvoiceMTML1753091187000.pdf";
+        String pdfPath = "C:/home/Processed_Files/einv/receipts/DONE_VATInvoiceMTML1753094676000.pdf";
         try {
             String jsonOutput = parsePdfToInvoiceJson(pdfPath);
             System.out.println("✅ Final JSON Output:\n" + jsonOutput);
@@ -40,7 +40,7 @@ public class ReciptVATParser {
         invoice.put("invoiceCounter", "1");
         invoice.put("transactionType", "B2C");
         invoice.put("personType", "VATR");
-        invoice.put("invoiceTypeDesc", "CRN");
+        invoice.put("invoiceTypeDesc", "STD");
         invoice.put("currency", "MUR");
 
         // Extract fields
@@ -48,7 +48,8 @@ public class ReciptVATParser {
         invoice.put("invoiceIdentifier", invoiceId);
         invoice.put("invoiceRefIdentifier", invoiceId);
         invoice.put("previousNoteHash", "prevNote");
-        invoice.put("reasonStated", "Recharge Reversal Credit Note");
+        String accountNumber = extractAccountNumber(text);
+        invoice.put("reasonStated", "Receipt Note ~ Account: " + accountNumber);
         invoice.put("salesTransactions", "CASH");
 
         // Format dateTimeInvoiceIssued as yyyyMMdd HH:mm:ss
@@ -88,9 +89,8 @@ public class ReciptVATParser {
         // Buyer
         Map<String, String> buyer = new LinkedHashMap<>();
         String fullName = extractRegex(text, "Customer Name:\\s*([^\n]+)");
-        String[] nameParts = fullName.split("\\s+");
-        String buyerName = (nameParts.length >= 2) ? nameParts[0] + " " + nameParts[1] : fullName;
-        buyer.put("name", buyerName.trim());
+        String cleanedName = fullName.replaceAll("BRN:.*", "").trim(); // remove anything after "BRN:"
+        buyer.put("name", cleanedName);
 
         String fullAddr = extractRegex(text, "Customer Address:\\s*([^\n]+)");
         String[] addrParts = fullAddr.split("\\s+");
@@ -120,13 +120,14 @@ public class ReciptVATParser {
         item.put("itemDesc", extractRegex(text, "\\d+\\s+(.+?)\\s+Rs\\.") // fallback
                 .replaceAll("\\s+", " ").trim());
         item.put("quantity", "1");
-        item.put("unitPrice", format(unitPrice));
+//        item.put("unitPrice", format(unitPrice));
+        item.put("unitPrice", format(amtWoVat));
         item.put("discount", "0.00000");
         item.put("amtWoVatCur", format(amtWoVat));
         item.put("amtWoVatMur", format(amtWoVat));
         item.put("vatAmt", format(vat));
         item.put("totalPrice", format(total));
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
 
         invoice.put("itemList", List.of(item));
 
@@ -163,6 +164,11 @@ public class ReciptVATParser {
         }
 
         return 0.0;
+    }
+
+    private static String extractAccountNumber(String text) {
+        Matcher matcher = Pattern.compile("Customer Account ID:?\\s*(\\d{8})").matcher(text);
+        return matcher.find() ? matcher.group(1) : "UNKNOWN";
     }
 
     private static String format(double value) {

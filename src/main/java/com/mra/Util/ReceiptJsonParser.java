@@ -1,76 +1,21 @@
 package com.mra.Util;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.itextpdf.kernel.pdf.PdfDocument;
-import com.itextpdf.kernel.pdf.PdfPage;
-import com.itextpdf.kernel.pdf.PdfReader;
-import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor;
 
-import java.io.IOException;
+import java.io.File;
 import java.util.*;
 
-public class ReceiptPdfToJsonParser {
+public class ReceiptJsonParser {
 
-    public static void main(String[] args) {
-        String pdfFilePath = "C:\\Users\\Krishna Purohit\\Downloads\\630235891_1753089849000-30235891-Bill Pay-Multi.pdf";
-
-        try {
-            List<String> pageContents = extractTextFromPdf(pdfFilePath);
-
-            // Convert to raw structured JSON (as if from receipt OCR step)
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.enable(SerializationFeature.INDENT_OUTPUT);
-            ArrayNode receipts = mapper.createArrayNode();
-
-            for (int i = 0; i < pageContents.size(); i++) {
-                ObjectNode receipt = mapper.createObjectNode();
-                receipt.put("pageNumber", i + 1);
-                ObjectNode content = mapper.createObjectNode();
-
-                String[] lines = pageContents.get(i).split("\\r?\\n|(?<=\\d) (?=[A-Z])");
-
-                int lineNo = 1;
-                for (String line : lines) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) {
-                        content.put(String.valueOf(lineNo++), trimmed);
-                    }
-                }
-
-                receipt.set("content", content);
-                receipts.add(receipt);
-            }
-
-            // Now pass this JSON into the parser logic
-            parseReceiptJson(receipts);
-
-            System.out.println("✅ PDF parsed and items extracted as JSON.");
-        } catch (Exception e) {
-            System.err.println("❌ Error: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    public static List<String> extractTextFromPdf(String pdfFilePath) throws IOException {
-        List<String> pageContents = new ArrayList<>();
-        try (PdfDocument pdfDoc = new PdfDocument(new PdfReader(pdfFilePath))) {
-            int numPages = pdfDoc.getNumberOfPages();
-            for (int i = 1; i <= numPages; i++) {
-                PdfPage page = pdfDoc.getPage(i);
-                String content = PdfTextExtractor.getTextFromPage(page);
-                pageContents.add(content);
-            }
-        }
-        return pageContents;
-    }
-
-    public static void parseReceiptJson(ArrayNode receipts) throws Exception {
+    public static void main(String[] args) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
+
+        // Load the JSON array from file
+        List<JsonNode> receipts = mapper.readValue(new File("receipts.json"), new TypeReference<>() {});
 
         for (JsonNode receipt : receipts) {
             JsonNode content = receipt.get("content");
@@ -125,7 +70,7 @@ public class ReceiptPdfToJsonParser {
                 }
             }
 
-            // Print final output
+            // Print output JSON
             String output = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(parsedItems);
             System.out.println("==== JSON Items ====");
             System.out.println(output);

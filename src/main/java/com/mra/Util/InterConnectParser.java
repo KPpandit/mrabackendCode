@@ -54,7 +54,7 @@ public class InterConnectParser {
         invoiceNode.put("invoiceIdentifier", invoiceNumber);
         invoiceNode.put("invoiceRefIdentifier", invoiceNumber);
         invoiceNode.put("previousNoteHash", "prevNote");
-        invoiceNode.put("reasonStated", "Corrected interconnect invoice");
+        invoiceNode.put("reasonStated", "Interconnect Receipt ~ 0");
         invoiceNode.put("salesTransactions", "CASH");
         invoiceNode.put("totalVatAmount", vatAmount);
         invoiceNode.put("totalAmtWoVatCur", amountWoVat);
@@ -115,7 +115,7 @@ public class InterConnectParser {
         item.put("amtWoVatMur", amountWoVat);
         item.put("vatAmt", vatAmount);
         item.put("totalPrice", amountWithVat);
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
         itemList.add(item);
 
         invoiceNode.set("itemList", itemList);

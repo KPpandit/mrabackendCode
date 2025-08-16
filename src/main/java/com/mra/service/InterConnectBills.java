@@ -1,20 +1,28 @@
 package com.mra.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mra.Util.EBSPdfParser;
+import com.itextpdf.io.image.ImageData;
+import com.itextpdf.io.image.ImageDataFactory;
+import com.itextpdf.kernel.font.PdfFontFactory;
+import com.itextpdf.kernel.pdf.*;
+import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
+import com.itextpdf.layout.Document;
+import com.itextpdf.layout.element.Image;
 import com.mra.Util.InterConnectParser;
 import com.mra.model.InvoiceBean;
 import lombok.RequiredArgsConstructor;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -23,16 +31,17 @@ import java.util.Map;
 public class InterConnectBills {
 
     private final MRAService mraService;
-//    private static final String BASE_URL = "http://41.222.103.118:22221";
-    private static final String BASE_URL = "http://172.28.5.2:22221";
-    private static final String DOWNLOAD_DIR = "/home/downloads/interconnect";   // changed
-    private static final String PROCESSED_DIR = "/home/Processed_Files/einv/interconnect_bills";  // changed
+//    private final InventoryFileService inventoryFileService;
 
-    // 🔁 Scheduled every hour
+    private static final String BASE_URL = "http://41.222.103.118:22221";
+//   private static final String BASE_URL = "http://172.28.5.2:22221";
+    private static final String DOWNLOAD_DIR = "/home/downloads/interconnect";
+    private static final String PROCESSED_DIR = "/home/Processed_Files/einv/interconnect_bills";
+
     @Scheduled(fixedRate = 60 * 60 * 1000)
     public void scheduledInvoiceProcessing() {
         System.out.println("⏳ Scheduled job started...");
-        downloadAndSubmitInvoices("interconnect_bills"); // 👈 changed folder name here
+        downloadAndSubmitInvoices("interconnect_bills");
     }
 
     public void downloadAndSubmitInvoices(String folder) {
@@ -42,27 +51,78 @@ public class InterConnectBills {
 
             for (Map<String, Object> file : files) {
                 String fileName = (String) file.get("name");
-                System.out.println("\n📥 Downloading: " + fileName);
+                System.out.println("\n📅 Checking: " + fileName);
+
                 File downloaded = downloadFile(folder, fileName, DOWNLOAD_DIR);
+                if (downloaded == null) {
+                    System.err.println("❌ Could not download: " + fileName);
+                    continue;
+                }
 
-                if (downloaded != null) {
-                    String json = InterConnectParser.parseToJson(downloaded.getAbsolutePath());
-                    System.out.println("📤 Submitting invoice for: " + fileName);
-                    System.out.println(json + "  ---- json Invoice ----");
+                // 🔹 Parse invoice JSON
+                String json = InterConnectParser.parseToJson(downloaded.getAbsolutePath());
+                ObjectMapper objectMapper = new ObjectMapper();
+                List<InvoiceBean> invoiceBeans = objectMapper.readValue(
+                        json,
+                        new com.fasterxml.jackson.core.type.TypeReference<>() {}
+                );
 
-                    ObjectMapper objectMapper = new ObjectMapper();
-                    List<InvoiceBean> invoiceBeans = objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<InvoiceBean>>() {});
+                // 🔹 Skip invoices with VAT = 0
+                List<InvoiceBean> nonZeroVatInvoices = invoiceBeans.stream()
+                        .filter(invoice -> !"0".equalsIgnoreCase(invoice.getTotalVatAmount()))
+                        .toList();
+                if (nonZeroVatInvoices.isEmpty()) {
+                    System.out.println("⚠️ All invoices have VAT = 0. Skipping file: " + fileName);
+                    continue;
+                }
 
-                    String result = mraService.submitInvoices(invoiceBeans);
+                // 🔹 Generate invoiceIdentifier (safe for filenames)
+                String invoiceIdentifier = invoiceBeans.get(0).getInvoiceIdentifier()
+                        .replace("/", "-")
+                        .replace("\\", "-");
 
-                    boolean isSuccess = result != null && result.contains("SUCCESS");
+                // 🔹 Prepare processed file names (DONE & FAILED)
+                String doneFileName = "DONE_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
+                String failedFileName = "FAILED_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
 
-                    if (isSuccess) {
-                        System.out.println("✅ Submitted Successfully Inter Connnect Bills. Moving file.");
-                        moveFileToProcessed(downloaded, fileName);
-                    } else {
-                        System.err.println("❌ Submission failed for: " + fileName);
+                File processedDone = new File(PROCESSED_DIR, doneFileName);
+                File processedFailed = new File(PROCESSED_DIR, failedFileName);
+
+                // ✅ Skip if already processed (either DONE or FAILED exists)
+                if (processedDone.exists() || processedFailed.exists()) {
+                    System.out.println("⏭️ Already processed earlier (DONE/FAILED). Skipping: " + fileName);
+                    // delete temp downloaded file
+                    if (downloaded.exists()) {
+                        downloaded.delete();
                     }
+                    continue;
+                }
+
+                // 🔹 Submit to MRA
+                String result;
+                boolean isSuccess;
+                try {
+                    result = mraService.submitInvoices(invoiceBeans);
+                    isSuccess = result != null && result.contains("SUCCESS");
+                } catch (Exception e) {
+                    System.err.println("❌ Exception while submitting to MRA: " + e.getMessage());
+                    isSuccess = false;
+                    result = null;
+                }
+
+                if (isSuccess) {
+                    String[] qrAndIrn = extractQrAndIrnFromResponse(result);
+                    String qrBase64 = qrAndIrn[0];
+                    String irn = qrAndIrn[1];
+
+                    byte[] modifiedPdf = addQrAndIrnToPdf(downloaded, qrBase64, irn);
+//                    inventoryFileService.savePdf(invoiceIdentifier, modifiedPdf);
+
+                    System.out.println("✅ Submitted Successfully. Moving file.");
+                    moveFileToProcessed(downloaded, "DONE", fileName, invoiceIdentifier);
+                } else {
+                    System.err.println("❌ Submission failed. Moving file.");
+                    moveFileToProcessed(downloaded, "FAILED", fileName, invoiceIdentifier);
                 }
             }
         } catch (Exception e) {
@@ -104,30 +164,82 @@ public class InterConnectBills {
         }
     }
 
+    // ✅ Adjusted: prefix + fileName + invoiceIdentifier
+    // inside InterConnectBills.java
 
-    private void moveFileToProcessed(File original, String originalFileName) {
+    // ✅ Adjusted: prefix + fileName + invoiceIdentifier
+    private void moveFileToProcessed(File original, String prefix, String fileName, String invoiceIdentifier) {
         try {
             File processedDir = new File(PROCESSED_DIR);
             if (!processedDir.exists()) processedDir.mkdirs();
 
-            String newFileName = "DONE_" + originalFileName;
+            String newFileName = prefix + "_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
             File newFile = new File(processedDir, newFileName);
+
+            // ✅ Skip if file already exists
+            if (newFile.exists()) {
+                System.out.println("⏭️ File already exists in processed folder, skipping: " + newFile.getAbsolutePath());
+                // also delete the original temp file if needed
+                if (original.exists()) {
+                    original.delete();
+                }
+                return;
+            }
+
             Files.move(original.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("📁 Moved to: " + newFile.getAbsolutePath());
+            System.out.println("📂 Moved to: " + newFile.getAbsolutePath());
         } catch (IOException e) {
             System.err.println("⚠️ Failed to move file to processed directory.");
             e.printStackTrace();
         }
     }
 
-    // 🧪 PSVM for testing
-    public static void main(String[] args) {
-        InterConnectBills service = new InterConnectBills(null); // Pass null since MRAService is not needed for testing download
 
-        try {
-            service.downloadAndSubmitInvoices("interconnect_bills");
-        } catch (Exception e) {
-            e.printStackTrace();
+    private String[] extractQrAndIrnFromResponse(String resultJson) {
+        JSONObject root = new JSONObject(resultJson);
+        JSONArray fiscalisedInvoices = root.getJSONArray("fiscalisedInvoices");
+        if (fiscalisedInvoices.length() > 0) {
+            JSONObject invoice = fiscalisedInvoices.getJSONObject(0);
+            return new String[]{invoice.getString("qrCode"), invoice.getString("irn")};
         }
+        return new String[]{"", ""};
+    }
+
+    public byte[] addQrAndIrnToPdf(File inputPdf, String qrBase64, String irnText) throws Exception {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        PdfDocument pdfDoc = new PdfDocument(new PdfReader(inputPdf), new PdfWriter(outputStream));
+        Document document = new Document(pdfDoc);
+        PdfPage page = pdfDoc.getLastPage();
+        PdfCanvas canvas = new PdfCanvas(page);
+
+        // Decode QR
+        if (qrBase64.contains(",")) {
+            qrBase64 = qrBase64.split(",")[1];
+        }
+        byte[] imageBytes = Base64.getDecoder().decode(qrBase64);
+        ImageData imageData = ImageDataFactory.create(imageBytes);
+
+        float marginRight = 100f;
+        float marginBottom = 10f;
+        float qrWidth = 70f;
+        float qrHeight = 70f;
+
+        float pageWidth = page.getPageSize().getWidth();
+        float qrX = pageWidth - marginRight - qrWidth - 20;
+        float qrY = marginBottom + 20f;
+
+        Image qrImage = new Image(imageData)
+                .scaleToFit(qrWidth, qrHeight)
+                .setFixedPosition(qrX, qrY);
+        document.add(qrImage);
+
+        canvas.beginText()
+                .setFontAndSize(PdfFontFactory.createFont(), 9)
+                .moveText(qrX, qrY - 10f)
+                .showText(irnText)
+                .endText();
+
+        document.close();
+        return outputStream.toByteArray();
     }
 }

@@ -53,7 +53,7 @@ public class EBSPdfParser {
         root.put("invoiceIdentifier", billNo);
         root.put("invoiceRefIdentifier", billNo);
         root.put("previousNoteHash", "prevNote");
-        root.put("reasonStated", "rgeegr");
+        root.put("reasonStated", "EBS Receipt ~ 0");
         root.put("salesTransactions", "CASH");
         root.put("totalVatAmount", String.format("%.3f", vatAmount));
         root.put("totalAmtWoVatCur", String.format("%.3f", amtWoVat));
@@ -113,7 +113,7 @@ public class EBSPdfParser {
         item.put("nature", "GOODS");
         item.put("productCodeMra", "");
         item.put("productCodeOwn", "");
-        item.put("itemDesc", "30 Mbps Internet - Monthly Fee");
+        item.put("itemDesc", "30 Mbps Internet ~ Monthly Fee");
         item.put("quantity", "1");
         item.put("unitPrice", String.format("%.3f", invoiceTotal));
         item.put("discount", "0.00");
@@ -122,7 +122,7 @@ public class EBSPdfParser {
         item.put("amtWoVatMur", String.format("%.3f", amtWoVat));
         item.put("vatAmt", String.format("%.3f", vatAmount));
         item.put("totalPrice", String.format("%.3f", invoiceTotal));
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
         itemList.add(item);
         root.set("itemList", itemList);
 

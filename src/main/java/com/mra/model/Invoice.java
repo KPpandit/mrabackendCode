@@ -43,7 +43,7 @@ public class Invoice implements Serializable {
 	private String dateTimeInvoiceIssued;
 
 	private String discountTotalAmount;
-
+//	@Column(name = "invoiceIndentifier", unique = true, nullable = false)
 	private String invoiceIndentifier;
 	private String invoiceRefIdentifier;
 	private String invoicePath;

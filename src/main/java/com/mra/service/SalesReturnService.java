@@ -1,21 +1,28 @@
 package com.mra.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mra.Util.InterConnectParser;
+import com.itextpdf.io.image.ImageData;
+import com.itextpdf.io.image.ImageDataFactory;
+import com.itextpdf.kernel.font.PdfFontFactory;
+import com.itextpdf.kernel.pdf.*;
+import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
+import com.itextpdf.layout.Document;
+import com.itextpdf.layout.element.Image;
 import com.mra.Util.SalesReturnParser;
 import com.mra.model.InvoiceBean;
 import lombok.RequiredArgsConstructor;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -24,49 +31,80 @@ import java.util.Map;
 public class SalesReturnService {
 
     private final MRAService mraService;
-//    private static final String BASE_URL = "http://41.222.103.118:22221";
-    private static final String BASE_URL = "http://172.28.5.2:22221";
+
+    private static final String BASE_URL = "http://41.222.103.118:22221";
     private static final String DOWNLOAD_DIR = "/home/downloads/salesReturn";
     private static final String PROCESSED_DIR = "/home/Processed_Files/einv/sales_return";
 
-    // 🔁 Scheduled every hour
-    @Scheduled(fixedRate = 60 * 60 * 1000)
+    @Scheduled(fixedRate = 60 * 60 * 1000) // every 1 hour
     public void scheduledInvoiceProcessing() {
-        System.out.println("⏳ Scheduled job started...");
-        downloadAndSubmitInvoices("sales_return"); // ✅ correct folder name
+        downloadAndSubmitInvoices("sales_return");
     }
 
     public void downloadAndSubmitInvoices(String folder) {
         try {
             List<Map<String, Object>> files = listFiles(folder);
-            System.out.println("📄 Files Found: " + files.size());
-            System.out.println(" ***************** Files started for Sales return *****************");
             for (Map<String, Object> file : files) {
                 String fileName = (String) file.get("name");
-                System.out.println("\n📥 Downloading: " + fileName);
                 File downloaded = downloadFile(folder, fileName, DOWNLOAD_DIR);
 
-                if (downloaded != null) {
-                    String json = SalesReturnParser.parseToJson(downloaded.getAbsolutePath());
-                    System.out.println("📤 Submitting invoice for: " + fileName);
-                    System.out.println(json + "  ---- json Invoice ----");
+                if (downloaded == null) continue;
 
+                try {
+                    String json = SalesReturnParser.parseToJson(downloaded.getAbsolutePath());
                     ObjectMapper objectMapper = new ObjectMapper();
                     List<InvoiceBean> invoiceBeans = objectMapper.readValue(
                             json,
                             new com.fasterxml.jackson.core.type.TypeReference<List<InvoiceBean>>() {}
                     );
 
-                    String result = mraService.submitInvoices(invoiceBeans);
+                    if (invoiceBeans.isEmpty()) continue;
 
-                    boolean isSuccess = result != null && result.contains("SUCCESS");
+                    // Take first invoice identifier
+                    String invoiceIdentifier = invoiceBeans.get(0).getInvoiceIdentifier();
+                    invoiceIdentifier = invoiceIdentifier.replace("/", "-").replace("\\", "-");
 
-                    if (isSuccess) {
-                        System.out.println("✅ Submitted Successfully Sales Return . Moving file.");
-                        moveFileToProcessed(downloaded, fileName);
-                    } else {
-                        System.err.println("❌ Submission failed for: " + fileName);
+                    // Check if already processed
+                    if (isAlreadyProcessed(fileName, invoiceIdentifier)) {
+                        System.out.println("⏩ Skipping already processed file: " + fileName);
+                        continue;
                     }
+
+                    // Filter VAT != 0
+                    List<InvoiceBean> nonZeroVatInvoices = invoiceBeans.stream()
+                            .filter(invoice -> !"0".equalsIgnoreCase(invoice.getTotalVatAmount()))
+                            .toList();
+
+                    if (nonZeroVatInvoices.isEmpty()) continue;
+
+                    String result;
+                    try {
+                        result = mraService.submitInvoices(invoiceBeans);
+                    } catch (Exception e) {
+                        System.err.println("❌ Exception while calling MRA service for " + fileName);
+                        moveFileToProcessed(downloaded, fileName, invoiceIdentifier, false);
+                        continue;
+                    }
+
+                    if (result != null && result.contains("SUCCESS")) {
+                        String[] qrAndIrn = extractQrAndIrnFromResponse(result);
+                        String qrBase64 = qrAndIrn[0];
+                        String irn = qrAndIrn[1];
+
+                        byte[] modifiedPdf = addQrAndIrnToPdf(downloaded, qrBase64, irn);
+
+                        // overwrite original before moving
+                        try (FileOutputStream fos = new FileOutputStream(downloaded)) {
+                            fos.write(modifiedPdf);
+                        }
+
+                        moveFileToProcessed(downloaded, fileName, invoiceIdentifier, true);
+                    } else {
+                        moveFileToProcessed(downloaded, fileName, invoiceIdentifier, false);
+                    }
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    moveFileToProcessed(downloaded, fileName, "UNKNOWN", false);
                 }
             }
         } catch (Exception e) {
@@ -102,34 +140,88 @@ public class SalesReturnService {
                 return outputFile;
             }
         } catch (Exception e) {
-            System.err.println("❌ Failed to download: " + fileName);
             e.printStackTrace();
             return null;
         }
     }
 
-    private void moveFileToProcessed(File original, String originalFileName) {
+    private boolean isAlreadyProcessed(String originalFileName, String invoiceIdentifier) {
+        String baseName = originalFileName.endsWith(".pdf")
+                ? originalFileName.substring(0, originalFileName.length() - 4)
+                : originalFileName;
+
+        String doneName = "DONE_" + baseName + "_" + invoiceIdentifier + ".pdf";
+        String failedName = "FAILED_" + baseName + "_" + invoiceIdentifier + ".pdf";
+
+        File doneFile = new File(PROCESSED_DIR, doneName);
+        File failedFile = new File(PROCESSED_DIR, failedName);
+
+        return doneFile.exists() || failedFile.exists();
+    }
+
+    private void moveFileToProcessed(File original, String originalFileName, String invoiceIdentifier, boolean success) {
         try {
             File processedDir = new File(PROCESSED_DIR);
             if (!processedDir.exists()) processedDir.mkdirs();
 
-            String newFileName = "DONE_" + originalFileName;
-            File newFile = new File(processedDir, newFileName);
+            // Remove extension
+            String baseName = originalFileName.endsWith(".pdf")
+                    ? originalFileName.substring(0, originalFileName.length() - 4)
+                    : originalFileName;
+
+            String safeInvoiceIdentifier = invoiceIdentifier.replace("/", "-").replace("\\", "-");
+            String prefix = success ? "DONE_" : "FAILED_";
+            String finalFileName = prefix + baseName + "_" + safeInvoiceIdentifier + ".pdf";
+
+            File newFile = new File(processedDir, finalFileName);
             Files.move(original.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("📁 Moved to: " + newFile.getAbsolutePath());
+
+            System.out.println("📂 File moved to: " + newFile.getAbsolutePath());
         } catch (IOException e) {
-            System.err.println("⚠️ Failed to move file to processed directory.");
             e.printStackTrace();
         }
     }
 
-    // 🧪 Test manually
-    public static void main(String[] args) {
-        SalesReturnService service = new SalesReturnService(null); // ✅ corrected class
-        try {
-            service.downloadAndSubmitInvoices("sales_return"); // ✅ correct endpoint path
-        } catch (Exception e) {
-            e.printStackTrace();
+    private String[] extractQrAndIrnFromResponse(String resultJson) {
+        JSONObject root = new JSONObject(resultJson);
+        JSONArray fiscalisedInvoices = root.getJSONArray("fiscalisedInvoices");
+        if (fiscalisedInvoices.length() > 0) {
+            JSONObject invoice = fiscalisedInvoices.getJSONObject(0);
+            return new String[]{invoice.optString("qrCode", ""), invoice.optString("irn", "")};
         }
+        return new String[]{"", ""};
+    }
+
+    public byte[] addQrAndIrnToPdf(File inputPdf, String qrBase64, String irnText) throws Exception {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        PdfDocument pdfDoc = new PdfDocument(new PdfReader(inputPdf), new PdfWriter(outputStream));
+        Document document = new Document(pdfDoc);
+        PdfPage page = pdfDoc.getFirstPage();
+        PdfCanvas canvas = new PdfCanvas(page);
+
+        float pageHeight = page.getPageSize().getHeight();
+
+        float qrX = 30f;
+        float qrYFromTop = 100f;
+        float qrY = pageHeight - qrYFromTop;
+
+        if (qrBase64.contains(",")) {
+            qrBase64 = qrBase64.split(",")[1];
+        }
+        byte[] imageBytes = Base64.getDecoder().decode(qrBase64);
+        ImageData imageData = ImageDataFactory.create(imageBytes);
+        Image image = new Image(imageData)
+                .setFixedPosition(qrX, qrY)
+                .scaleToFit(100, 100);
+        document.add(image);
+
+        canvas.beginText()
+                .setFontAndSize(PdfFontFactory.createFont(), 10)
+                .moveText(qrX, qrY - 15f)
+                .showText("IRN: " + irnText)
+                .endText();
+
+        document.close();
+        return outputStream.toByteArray();
     }
 }

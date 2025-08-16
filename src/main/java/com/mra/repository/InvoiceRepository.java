@@ -31,6 +31,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Integer>{
 	@Query(value = "select * from invoices where invoiceIndentifier=?1 and processStatus=1", nativeQuery = true)
 	Invoice findInvoiceByIdentifier(String invoiceIndentifier);
 
+	@Query(value = "select * from invoices where invoiceIndentifier=?1 and processStatus=0", nativeQuery = true)
+	Invoice findFailedInvoiceByIdentifier(String invoiceIndentifier);
+
 
 //
 

@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -43,6 +44,8 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Schedules;
 import org.springframework.stereotype.Service;
@@ -61,7 +64,9 @@ import com.mra.repository.ProductsInvoiceRepository;
 
 @Service
 public class MRAService {
-	
+
+	private static final Logger logger = (Logger) LoggerFactory.getLogger(MRAService.class);
+
 	@Autowired
 	InvoiceRepository invoiceRepository;
 	
@@ -71,9 +76,9 @@ public class MRAService {
 	SecretKey secretKey = null;
 	private HashMap<String, Object> keystore = new HashMap<String, Object>();
 
-//	private static final String PUBLIC_KEY_FILE = "C:\\Users\\Krishna Purohit\\Downloads\\PublicKey.crt";
+	private static final String PUBLIC_KEY_FILE = "C:\\Users\\Krishna Purohit\\Downloads\\PublicKey.crt";
 	private static final String ALGORITHM = "AES";
-	private static final String PUBLIC_KEY_FILE ="/home/certificate/PublicKey.crt";
+//	private static final String PUBLIC_KEY_FILE ="/home/certificate/PublicKey.crt";
 	private byte[] readFileBytes() throws IOException
 	{
 		Path path = Paths.get(PUBLIC_KEY_FILE);
@@ -86,130 +91,128 @@ public class MRAService {
 			return "Invalid Invoice";
 		}
 
-		// Assuming you check by the first invoice in the list
-		String invoiceIdentifing = invoiceBean.get(0).getInvoiceIdentifier();
-		System.out.println(invoiceIdentifing+"-----");
-		// Look for this invoice in the DB
-		Invoice existingInvoice = invoiceRepository.findInvoiceByIdentifier(invoiceIdentifing);
+		// Get invoice identifier from first invoice
+		String invoiceIdentifier = invoiceBean.get(0).getInvoiceIdentifier();
+//		System.out.println(invoiceIdentifier + "-----");
 
+		// Check if this invoice already exists (successful or failed)
+		Invoice existingInvoice = invoiceRepository.findInvoiceByIdentifier(invoiceIdentifier);
 		if (existingInvoice != null) {
-			System.out.println("Invoice already exists in DB. Skipping submission.");
-			return "Invoice already submitted. Skipping submission.";
+			if (existingInvoice.getProcessStatus()) {
+				System.out.println("Successful Invoice already exists in DB. Skipping submission.");
+				return "Invoice already submitted. Skipping submission.";
+			} else {
+				System.out.println("Failed Invoice already exists in DB. Skipping submission.");
+				return "Failed File Already Exist";
+			}
 		}
 
-		if(invoiceBean == null)
-			return "Invalid Invoice";
-		Gson gson = new Gson();
-		String json = gson.toJson(invoiceBean);
-		String token = generateAuthToken();
 		String responseStr = null;
-		String encodedString = null;
-		try {
-			encodedString = encryptAES(json);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		String payload = "{  \"requestId\": \""+System.currentTimeMillis()+"\", \r\n"
-				+"\"requestDateTime\": \""+getRequestDateTime()+"\", \r\n"
-				+"\"signedHash\": \"\", \r\n"
-				+ "\"encryptedInvoice\": \""+encodedString+"\"}";
-		//System.out.println(payload);
-		TrustManager[] trustAllCerts = new TrustManager[]{
-				new X509TrustManager() {
-					public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-						return null;
-					}
-					public void checkClientTrusted(
-							java.security.cert.X509Certificate[] certs, String authType) {
-					}
-					public void checkServerTrusted(
-							java.security.cert.X509Certificate[] certs, String authType) {
-					}
-				}
-		};
+		String errorResponse = null;
+		boolean isSuccessful = false;
 
-		// Install the all-trusting trust manager
-		HttpResponse<String> response = null;
 		try {
+			// Prepare encrypted payload
+			Gson gson = new Gson();
+			String json = gson.toJson(invoiceBean);
+			String token = generateAuthToken();
+			String encodedString = encryptAES(json);
+
+			String payload = "{  \"requestId\": \"" + System.currentTimeMillis() + "\", \r\n"
+					+ "\"requestDateTime\": \"" + getRequestDateTime() + "\", \r\n"
+					+ "\"signedHash\": \"\", \r\n"
+					+ "\"encryptedInvoice\": \"" + encodedString + "\"}";
+
+			// SSL/TLS setup
+			TrustManager[] trustAllCerts = new TrustManager[]{
+					new X509TrustManager() {
+						public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
+						public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+						public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+					}
+			};
+
 			SSLContext sc = SSLContext.getInstance("SSL");
 			sc.init(null, trustAllCerts, new java.security.SecureRandom());
 			HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
 
-			// Creat HttpClient with new SSLContext.
 			HttpClient client = HttpClient.newBuilder()
-					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
+//					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
 					.connectTimeout(Duration.ofMillis(3 * 1000))
-					.sslContext(sc) // SSL context 'sc' initialised as earlier
+					.sslContext(sc)
 					.build();
 
-			//HttpClient client = HttpClient.newHttpClient();
-			//System.out.println(payload);
 			HttpRequest request = HttpRequest.newBuilder()
-					//Staging
 					.uri(URI.create("https://vfisc.mra.mu/realtime/invoice/transmit"))
 					.header("Content-Type", "application/json")
-					.header("username", "72105361")
-					.header("ebsMraId", "17134368311521Q2DR5MC11Z")
+					.header("username", "TU20275899")
+					.header("ebsMraId", "17543875615480ULGPJVT26A")
 					.header("areaCode", "914")
 					.header("token", token)
 					.method("POST", BodyPublishers.ofString(payload))
 					.build();
 
-			response = client
-					.send(request, HttpResponse.BodyHandlers.ofString());
-			System.out.println(response.statusCode()+ " "+response.body()+ " "+response.toString());
-			if(response.statusCode() == 200) {
-				responseStr = response.body();
-				//System.out.println(responseStr);
-				if(responseStr!=null && responseStr.contains("SUCCESS")) {
-					JsonObject jsonObject = JsonParser.parseString(responseStr)
-							.getAsJsonObject();
-					JsonArray invoiceResponse = null;
-					if(jsonObject.has("fiscalisedInvoices") && !jsonObject.get("fiscalisedInvoices").isJsonNull()) {
-						invoiceResponse = (JsonArray) jsonObject.get("fiscalisedInvoices");
-						persistInvoice(invoiceBean, true, invoiceResponse.toString());
-						try {
-							if(invoiceResponse != null) {
-								for (int i = 0; i < invoiceResponse.size(); i++) {
-									JsonObject invoices = (JsonObject) invoiceResponse.get(i);
-									String invoiceIdentifier = invoices.get("invoiceIdentifier").getAsString();
-									String irn = invoices.get("irn").getAsString();
-									String qrCode = invoices.get("qrCode").getAsString();
-									String status = invoices.get("status").getAsString();
-									System.out.println("**************************************************************************");
-									System.out.println("invoiceIdentifier: "+invoiceIdentifier);
-									System.out.println("qrCode: "+qrCode);
-									System.out.println("irn: "+irn);
-									System.out.println("status: "+status);
-									System.out.println("**************************************************************************");
+			HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+			System.out.println(response.statusCode() + " " + response.body());
+
+			responseStr = response.body();
+
+			if (response.statusCode() == 200) {
+				if (responseStr != null) {
+					JsonObject jsonObject = JsonParser.parseString(responseStr).getAsJsonObject();
+
+					if (responseStr.contains("SUCCESS")) {
+						JsonArray invoiceResponse = jsonObject.getAsJsonArray("fiscalisedInvoices");
+						if (invoiceResponse != null && invoiceResponse.size() > 0) {
+							isSuccessful = true;
+							persistInvoice(invoiceBean, true, invoiceResponse.toString());
+						}
+					} else {
+						// Save failed invoice only if not exists
+						saveFailedInvoiceIfNotExists(invoiceIdentifier, responseStr);
+
+						// Extract error messages
+						if (jsonObject.has("fiscalisedInvoices")) {
+							JsonArray fiscalisedInvoices = jsonObject.getAsJsonArray("fiscalisedInvoices");
+							if (fiscalisedInvoices.size() > 0) {
+								JsonObject firstInvoice = fiscalisedInvoices.get(0).getAsJsonObject();
+								if (firstInvoice.has("errorMessages")) {
+									errorResponse = " Failed File Validation errors: " +
+											firstInvoice.getAsJsonArray("errorMessages").toString();
 								}
 							}
-						} catch (Exception e) {
-							e.printStackTrace();
 						}
 					}
 				}
-				else if(responseStr!=null && responseStr.contains("errors")) {
-					JsonObject jsonObject = JsonParser.parseString(responseStr)
-							.getAsJsonObject();
-					String encodedResponse = jsonObject.get("errors").getAsString();
-				}
-
+			} else {
+				errorResponse = "HTTP Error: " + response.statusCode() + " - " + response.body();
+				saveFailedInvoiceIfNotExists(invoiceIdentifier, errorResponse);
 			}
-		} catch (KeyManagementException e) {
-			e.printStackTrace();
-		} catch (NoSuchAlgorithmException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (InterruptedException e) {
+		} catch (Exception e) {
+			errorResponse = "Exception occurred: " + e.getMessage();
+			saveFailedInvoiceIfNotExists(invoiceIdentifier, errorResponse);
 			e.printStackTrace();
 		}
 
-		return responseStr;
-
-
+		return isSuccessful ? responseStr : errorResponse;
 	}
+
+	private String saveFailedInvoiceIfNotExists(String invoiceIdentifier, String response) {
+		Invoice existingInvoice = invoiceRepository.findFailedInvoiceByIdentifier(invoiceIdentifier);
+		if (existingInvoice == null) {
+			Invoice minimalInvoice = new Invoice();
+			minimalInvoice.setInvoiceIndentifier(invoiceIdentifier);
+			minimalInvoice.setProcessStatus(false);
+			minimalInvoice.setInvoiceResponse(response);
+			minimalInvoice.setProcessingDateTime(new Date());
+			invoiceRepository.save(minimalInvoice);
+			return "Failed file saved successfully";
+		} else {
+			return "Failed file already existed";
+		}
+	}
+
+
 
 	private void persistInvoice(List<InvoiceBean> invoices, boolean isSucessful, String ebsResponse) {
 		//check if invoiceIdentifier exists in db
@@ -280,9 +283,9 @@ public class MRAService {
 			}
 			invoice.setProducts(productsInvoices);
 			invoiceRepository.save(invoice);
-			
+
 		}
-		
+
 	}
 
 
@@ -322,7 +325,7 @@ public class MRAService {
 
 			// Creat HttpClient with new SSLContext.
 			HttpClient client = HttpClient.newBuilder()
-					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
+//					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
 					.connectTimeout(Duration.ofMillis(3 * 1000))
 					.sslContext(sc) // SSL context 'sc' initialised as earlier
 					.build();
@@ -333,8 +336,8 @@ public class MRAService {
 					//Staging
 					.uri(URI.create("https://vfisc.mra.mu/einvoice-token-service/token-api/generate-token"))
 					.header("Content-Type", "application/json")
-					.header("username", "72105361")
-					.header("ebsMraId", "17134368311521Q2DR5MC11Z")
+					.header("username", "TU20275899")
+					.header("ebsMraId", "17543875615480ULGPJVT26A")
 					.header("areaCode", "914")
 					.method("POST", BodyPublishers.ofString(payload))
 					.build();
@@ -391,8 +394,8 @@ public class MRAService {
 			keystore.put("secret", new String(rawData));
 			String encodedKey = Base64.getEncoder().encodeToString(rawData); 
 			//System.out.println("encodedKey "+ encodedKey);
-			json = "{     \"username\": \"72105361\", \r\n"
-					+ "    \"password\": \"Mtml@1234\", \r\n"
+			json = "{     \"username\": \"TU20275899\", \r\n"
+					+ "    \"password\": \"Mtml@123\", \r\n"
 					+ "    \"encryptKey\": \""+encodedKey+"\", \r\n"
 					+ "    \"refreshToken\": \"false\" \r\n"
 					+ "} ";
@@ -624,7 +627,7 @@ public class MRAService {
 				+ "  \"salesTransactions\": \"CASH\" \r\n"
 				+ " } \r\n"
 				+ "]";
-		
+
 		Gson gson = new Gson();
 		Type typeMyType = new TypeToken<ArrayList<InvoiceBean>>(){}.getType();
 		List<InvoiceBean> ib = gson.fromJson(json, typeMyType);

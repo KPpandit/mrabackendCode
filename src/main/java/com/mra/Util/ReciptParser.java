@@ -44,14 +44,14 @@ public class ReciptParser {
         invoiceNode.put("invoiceCounter", "1");
         invoiceNode.put("transactionType", "B2C");
         invoiceNode.put("personType", "VATR");
-        invoiceNode.put("invoiceTypeDesc", "CRN");
+        invoiceNode.put("invoiceTypeDesc", "STD");
         invoiceNode.put("currency", "MUR");
 
         String invoiceId = getValue(text, "Receipt No\\.?\\s*(\\d{8}/\\d{8})");
         invoiceNode.put("invoiceIdentifier",  invoiceId);
         invoiceNode.put("invoiceRefIdentifier",  invoiceId);
         invoiceNode.put("previousNoteHash", "prevNote");
-        invoiceNode.put("reasonStated", "Recharge Reversal Credit Note");
+        invoiceNode.put("reasonStated", "Receipt ~ 0");
         invoiceNode.put("salesTransactions", "CASH");
 
         String[] amounts = extractRechargeAmounts(text); // [woVAT, VAT, total]
@@ -104,7 +104,7 @@ public class ReciptParser {
         item.put("amtWoVatMur", formatAmount(amounts[0]));
         item.put("vatAmt", formatAmount(amounts[1]));
         item.put("totalPrice", formatAmount(amounts[2]));
-        item.put("previousBalance", "0");
+        item.put("previousBalance", "0.00000 ~ 0.00000");
         itemList.add(item);
         invoiceNode.set("itemList", itemList);
 

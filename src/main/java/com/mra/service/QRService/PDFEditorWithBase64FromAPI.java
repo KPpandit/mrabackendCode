@@ -22,8 +22,8 @@ public class PDFEditorWithBase64FromAPI {
 
     public static void main(String[] args) throws Exception {
         String apiUrl = "http://41.222.103.118:8889/api/invoices/search?value=2025070725273131"; // Your actual API endpoint
-        String inputPdfPath = "/Users/sangameshhiremath/Desktop/630235891_1753089849000-30235891-Bill Pay-Multi.pdf";
-        String outputPdfPath = "/Users/sangameshhiremath/Desktop/630235891_1753089849000-30235891-Bill Pay-Multi-p.pdf";
+        String inputPdfPath = "C:\\Users\\Krishna Purohit\\Downloads\\630235891_1753089849000-30235891-Bill Pay-Multi (2).pdf";
+        String outputPdfPath = "C:\\Users\\Krishna Purohit\\Desktop\\630235891_1753089849000-30235891-Bill Pay-Multi (2).pdf";
 
         // Step 1: Call API and get Base64 image string
         //String base64Image = fetchBase64FromAPI(apiUrl);

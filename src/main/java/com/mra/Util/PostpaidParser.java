@@ -46,7 +46,7 @@ public class PostpaidParser {
         invoiceNode.put("invoiceIdentifier", extractValue(text, "Bill No\\.?\\s*:?\\s*(\\d{14,})"));
         invoiceNode.put("invoiceRefIdentifier", extractValue(text, "Bill No\\.?\\s*:?\\s*(\\d{14,})"));
         invoiceNode.put("previousNoteHash", "prevNote");
-        invoiceNode.put("reasonStated", "Corrected postpaid invoice");
+        invoiceNode.put("reasonStated", "Postpaid invoice Receipt ~ 0");
         invoiceNode.put("salesTransactions", "CASH");
 
         String vatAmount = extractLastDecimal(text, "VAT\\(@15.*?\\)\\s*Rs.?\\s*(\\d+\\.\\d+)");
@@ -109,7 +109,7 @@ public class PostpaidParser {
         item.put("nature", "SERVICES");
         item.put("productCodeMra", "");
         item.put("productCodeOwn", "");
-        item.put("itemDesc", "Postpaid Mobile Bill - " + extractValue(text, "Bill Month:?\\s*([A-Z]+\\s+\\d{4})"));
+        item.put("itemDesc", "Postpaid Mobile Bill ~ " + extractValue(text, "Bill Month:?\\s*([A-Z]+\\s+\\d{4})"));
         item.put("quantity", "1");
         item.put("unitPrice", amtBeforeVat);
         item.put("discount", "0.00");
