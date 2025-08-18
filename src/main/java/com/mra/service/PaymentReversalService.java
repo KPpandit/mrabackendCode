@@ -38,7 +38,7 @@ public class PaymentReversalService {
  private static final String DOWNLOAD_DIR = "/home/downloads/payment_reversal";
  private static final String PROCESSED_DIR = "/home/Processed_Files/einv/payment_reversal";
 
- @Scheduled(fixedRate = 60 * 60 * 1000)
+// @Scheduled(fixedRate = 60 * 60 * 1000)
  public void scheduledInvoiceProcessing() {
   System.out.println("⏳ Scheduled job started...");
   downloadAndSubmitInvoices("payment_reversal");
@@ -113,8 +113,12 @@ public class PaymentReversalService {
      byte[] updatedPdf = addQrAndIrnToPdf(downloaded, qrBase64, irn);
      inventoryFileService.savePdf(invoiceIdentifier, updatedPdf);
 
-     System.out.println("✅ Submitted Successfully → Moving to Done");
-     moveFileToProcessed(downloaded, "Done", fileName, invoiceIdentifier);
+     // ✅ Save modified PDF (with QR + IRN) into processed folder
+     saveProcessedFile("Done", fileName, invoiceIdentifier, updatedPdf);
+
+     System.out.println("✅ Submitted Successfully → Saved modified PDF");
+     if (downloaded.exists()) downloaded.delete();
+
     } else {
      System.err.println("❌ Submission Failed → Moving to Failed");
      moveFileToProcessed(downloaded, "Failed", fileName, invoiceIdentifier);
@@ -171,6 +175,26 @@ public class PaymentReversalService {
    System.out.println("📁 Moved to: " + newFile.getAbsolutePath());
   } catch (IOException e) {
    System.err.println("⚠️ Failed to move file.");
+   e.printStackTrace();
+  }
+ }
+
+ // ✅ NEW: Save modified PDF (with QR + IRN) instead of moving the original
+ private void saveProcessedFile(String prefix, String fileName, String invoiceIdentifier, byte[] pdfBytes) {
+  try {
+   File processedDir = new File(PROCESSED_DIR);
+   if (!processedDir.exists()) processedDir.mkdirs();
+
+   String newFileName = prefix + "_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
+   File newFile = new File(processedDir, newFileName);
+
+   try (FileOutputStream fos = new FileOutputStream(newFile)) {
+    fos.write(pdfBytes);
+   }
+
+   System.out.println("📂 Saved processed PDF with QR + IRN: " + newFile.getAbsolutePath());
+  } catch (IOException e) {
+   System.err.println("⚠️ Failed to save processed PDF.");
    e.printStackTrace();
   }
  }

@@ -12,7 +12,7 @@ import java.util.regex.*;
 public class ReciptVATParser {
 
     public static void main(String[] args) {
-        String pdfPath = "C:/home/Processed_Files/einv/receipts/DONE_VATInvoiceMTML1753094676000.pdf";
+        String pdfPath = "C:\\home\\Processed_Files\\einv\\receipts\\20250809\\FAILED_VATInvoiceMTML1754736095000_09082025-00621671.pdf";
         try {
             String jsonOutput = parsePdfToInvoiceJson(pdfPath);
             System.out.println("✅ Final JSON Output:\n" + jsonOutput);

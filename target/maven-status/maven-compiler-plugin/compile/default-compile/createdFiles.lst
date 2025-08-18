@@ -67,4 +67,5 @@ com\mra\model\Buyer.class
 com\mra\Util\PaymentReversalParser.class
 com\mra\repository\InventoryFileRepository.class
 com\mra\service\ReceiptService.class
+com\mra\controller\ReceiptController.class
 com\mra\service\MRAService$1.class

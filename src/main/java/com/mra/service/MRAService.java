@@ -76,9 +76,9 @@ public class MRAService {
 	SecretKey secretKey = null;
 	private HashMap<String, Object> keystore = new HashMap<String, Object>();
 
-	private static final String PUBLIC_KEY_FILE = "C:\\Users\\Krishna Purohit\\Downloads\\PublicKey.crt";
+//	private static final String PUBLIC_KEY_FILE = "C:\\Users\\Krishna Purohit\\Downloads\\PublicKey.crt";
 	private static final String ALGORITHM = "AES";
-//	private static final String PUBLIC_KEY_FILE ="/home/certificate/PublicKey.crt";
+	private static final String PUBLIC_KEY_FILE ="/home/certificate/PublicKey.crt";
 	private byte[] readFileBytes() throws IOException
 	{
 		Path path = Paths.get(PUBLIC_KEY_FILE);
@@ -99,8 +99,13 @@ public class MRAService {
 		Invoice existingInvoice = invoiceRepository.findInvoiceByIdentifier(invoiceIdentifier);
 		if (existingInvoice != null) {
 			if (existingInvoice.getProcessStatus()) {
-				System.out.println("Successful Invoice already exists in DB. Skipping submission.");
-				return "Invoice already submitted. Skipping submission.";
+				String existingResponseJson = existingInvoice.getInvoiceResponse();
+				if (existingResponseJson == null || existingResponseJson.trim().isEmpty()) {
+					existingResponseJson = "[]"; // empty array fallback
+				}
+
+				System.out.println("Invoice already submitted. Skipping submission");
+				return  "{\"status\":\"ALREADY_EXISTS\",\"message\":\"Invoice already submitted. Skipping submission.\",\"existingResponse\":" + existingResponseJson + "}";
 			} else {
 				System.out.println("Failed Invoice already exists in DB. Skipping submission.");
 				return "Failed File Already Exist";
@@ -137,7 +142,7 @@ public class MRAService {
 			HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
 
 			HttpClient client = HttpClient.newBuilder()
-//					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
+					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
 					.connectTimeout(Duration.ofMillis(3 * 1000))
 					.sslContext(sc)
 					.build();
@@ -153,7 +158,7 @@ public class MRAService {
 					.build();
 
 			HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-			System.out.println(response.statusCode() + " " + response.body());
+//			System.out.println(response.statusCode() + " " + response.body());
 
 			responseStr = response.body();
 
@@ -325,7 +330,7 @@ public class MRAService {
 
 			// Creat HttpClient with new SSLContext.
 			HttpClient client = HttpClient.newBuilder()
-//					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
+					.proxy(ProxySelector.of(new InetSocketAddress("172.28.5.2",8888)))
 					.connectTimeout(Duration.ofMillis(3 * 1000))
 					.sslContext(sc) // SSL context 'sc' initialised as earlier
 					.build();
@@ -632,7 +637,7 @@ public class MRAService {
 		Type typeMyType = new TypeToken<ArrayList<InvoiceBean>>(){}.getType();
 		List<InvoiceBean> ib = gson.fromJson(json, typeMyType);
 
-		System.out.println(json);
+//		System.out.println(json);
 		new MRAService().submitInvoices(ib);
 	}
 }

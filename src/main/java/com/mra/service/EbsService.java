@@ -29,9 +29,8 @@ import java.util.*;
 public class EbsService {
 
     private final MRAService mraService;
-//    private final InventoryFileService inventoryFileService;
 //    private static final String BASE_URL = "http://41.222.103.118:22221";
-    private static final String BASE_URL = "http://172.28.5.2:22221";
+     private static final String BASE_URL = "http://172.28.5.2:22221";
     private static final String DOWNLOAD_DIR = "/home/downloads/ebs";
     private static final String PROCESSED_DIR = "/home/Processed_Files/einv/ebs_bills";
 
@@ -41,7 +40,7 @@ public class EbsService {
         downloadAndSubmitInvoices("ebs_bills");
     }
 
-    public void downloadAndSubmitInvoices(String folder) {
+    private void downloadAndSubmitInvoices(String folder) {
         try {
             List<Map<String, Object>> files = listFiles(folder);
             System.out.println("📄 Files Found: " + files.size());
@@ -70,18 +69,40 @@ public class EbsService {
                     }
 
                     String result = mraService.submitInvoices(List.of(invoiceBean));
-                    boolean isSuccess = result != null && result.contains("SUCCESS");
+                    JSONObject root = new JSONObject(result);
+                    String status = root.optString("status");
 
-                    if (isSuccess) {
-                        String[] qrAndIrn = extractQrAndIrnFromResponse(result);
+                    if ("SUCCESS".equalsIgnoreCase(status)) {
+                        String[] qrAndIrn = extractQrAndIrnFromResponse(root);
                         byte[] modifiedPdf = addQrAndIrnToPdf(downloaded, qrAndIrn[0], qrAndIrn[1]);
-
                         moveFileToProcessed(modifiedPdf, "DONE_" + fileName, invoiceIdentifier);
                         System.out.println("✅ Submitted and saved: " + fileName);
 
-                    } else {
-                        System.err.println("❌ Submission failed for: " + fileName);
+                    } else if ("ALREADY_EXISTS".equalsIgnoreCase(status)) {
+                        try {
+                            String[] qrAndIrn = extractQrAndIrnFromResponse(root);
+                            if (!qrAndIrn[0].isEmpty() && !qrAndIrn[1].isEmpty()) {
+                                byte[] modifiedPdf = addQrAndIrnToPdf(downloaded, qrAndIrn[0], qrAndIrn[1]);
+                                moveFileToProcessed(modifiedPdf, "DONE_" + fileName, invoiceIdentifier);
+                                System.out.println("✅ Already existed, saved with QR+IRN: " + fileName);
+                            } else {
+                                System.err.println("⚠️ Already submitted but no QR/IRN found: " + fileName);
+                                byte[] failedPdf = addFailedStampToPdf(downloaded);
+                                moveFileToProcessed(failedPdf, "FAILED_" + fileName, invoiceIdentifier);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("⚠️ Error handling existingResponse for: " + fileName);
+                            e.printStackTrace();
+                        }
 
+                    } else if ("FAILED".equalsIgnoreCase(status)
+                            || result.contains("Failed File Validation errors:")) {
+                        byte[] failedPdf = addFailedStampToPdf(downloaded);
+                        moveFileToProcessed(failedPdf, "FAILED_" + fileName, invoiceIdentifier);
+                        System.out.println("❌ Failed validation, marked FAILED: " + fileName);
+
+                    } else {
+                        System.err.println("❌ Unknown submission response for: " + fileName);
                         byte[] failedPdf = addFailedStampToPdf(downloaded);
                         moveFileToProcessed(failedPdf, "FAILED_" + fileName, invoiceIdentifier);
                     }
@@ -91,6 +112,26 @@ public class EbsService {
             e.printStackTrace();
         }
     }
+
+    private String[] extractQrAndIrnFromResponse(JSONObject root) {
+        JSONArray invoicesArr = null;
+
+        if (root.has("fiscalisedInvoices")) {
+            invoicesArr = root.optJSONArray("fiscalisedInvoices");
+        } else if (root.has("existingResponse")) {
+            invoicesArr = root.optJSONArray("existingResponse");
+        }
+
+        if (invoicesArr != null && invoicesArr.length() > 0) {
+            JSONObject invoice = invoicesArr.getJSONObject(0);
+            String qr = invoice.optString("qrCode", "");
+            String irn = invoice.optString("irn", "");
+            return new String[]{qr, irn};
+        }
+
+        return new String[]{"", ""};
+    }
+
 
     private List<Map<String, Object>> listFiles(String folder) throws IOException {
         String urlString = BASE_URL + "/list/" + folder;
@@ -127,14 +168,10 @@ public class EbsService {
         }
     }
 
-    /**
-     * ✅ Check if processed file already exists with expected name
-     */
     private boolean isAlreadyProcessed(String fileName, String invoiceIdentifier) {
         File processedDir = new File(PROCESSED_DIR);
         if (!processedDir.exists()) return false;
 
-        // DONE_ or FAILED_ file already exists
         String doneFile = "DONE_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
         String failedFile = "FAILED_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
 
@@ -188,7 +225,7 @@ public class EbsService {
         byte[] imageBytes = Base64.getDecoder().decode(qrBase64);
         ImageData imageData = ImageDataFactory.create(imageBytes);
 
-        // QR code position
+        // QR position
         float qrX = 42f;
         float qrY = 180f;
         float qrWidth = 70f;
@@ -199,7 +236,7 @@ public class EbsService {
                 .setFixedPosition(qrX, qrY);
         document.add(image);
 
-        // IRN text below QR
+        // IRN below QR
         canvas.beginText()
                 .setFontAndSize(PdfFontFactory.createFont(), 9)
                 .moveText(qrX, qrY - 12)

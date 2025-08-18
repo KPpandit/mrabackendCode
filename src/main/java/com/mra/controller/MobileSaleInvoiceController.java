@@ -15,7 +15,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/invoices/mobile")
 @RequiredArgsConstructor
-
 public class MobileSaleInvoiceController {
     private final MobileSalesService mobileSalesService;
     private final MRAService mraService;

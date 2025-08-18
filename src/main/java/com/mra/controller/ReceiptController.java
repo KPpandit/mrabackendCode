@@ -3,20 +3,21 @@ package com.mra.controller;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.nio.file.*;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 @RestController
 @RequestMapping("/receipts")
 public class ReceiptController {
 
-    private static final String PROCESSED_DIR = "/home/Processed_Files/einv/receipts";
+    private static final String BASE_DIR = "/home/Processed_Files/einv"; // 🔥 root instead of receipts
 
-    // ✅ API 1: Check if file exists by invoiceIdentifier (as request param)
+    // ✅ API 1: Check if file exists by invoiceIdentifier
     @GetMapping("/check")
     public ResponseEntity<Void> checkFile(@RequestParam String invoiceIdentifier) {
         File file = findFileByInvoiceIdentifier(invoiceIdentifier);
@@ -26,7 +27,7 @@ public class ReceiptController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    // ✅ API 2: Download file by invoiceIdentifier (as request param)
+    // ✅ API 2: Download file by invoiceIdentifier
     @GetMapping("/download")
     public ResponseEntity<byte[]> downloadFile(@RequestParam String invoiceIdentifier) throws IOException {
         File file = findFileByInvoiceIdentifier(invoiceIdentifier);
@@ -40,20 +41,19 @@ public class ReceiptController {
                 .body(fileContent);
     }
 
-    // 🔍 Helper: Find file by invoiceIdentifier inside processed folder
+    // 🔍 Helper: Search all folders recursively
     private File findFileByInvoiceIdentifier(String invoiceIdentifier) {
-        File rootDir = new File(PROCESSED_DIR);
-        if (!rootDir.exists()) return null;
+        try (Stream<Path> paths = Files.walk(Paths.get(BASE_DIR))) {
+            Optional<Path> match = paths
+                    .filter(Files::isRegularFile) // only files
+                    .filter(path -> path.getFileName().toString().contains(invoiceIdentifier)) // match invoiceIdentifier
+                    .findFirst(); // get first match
 
-        File[] dateDirs = rootDir.listFiles(File::isDirectory);
-        if (dateDirs == null) return null;
+            return match.map(Path::toFile).orElse(null);
 
-        for (File dateDir : dateDirs) {
-            File[] files = dateDir.listFiles((dir, name) -> name.contains(invoiceIdentifier));
-            if (files != null && files.length > 0) {
-                return files[0]; // first match
-            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
         }
-        return null;
     }
 }

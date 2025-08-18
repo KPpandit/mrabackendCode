@@ -33,12 +33,12 @@ public class InterConnectBills {
     private final MRAService mraService;
 //    private final InventoryFileService inventoryFileService;
 
-    private static final String BASE_URL = "http://41.222.103.118:22221";
-//   private static final String BASE_URL = "http://172.28.5.2:22221";
+//    private static final String BASE_URL = "http://41.222.103.118:22221";
+       private static final String BASE_URL = "http://172.28.5.2:22221";
     private static final String DOWNLOAD_DIR = "/home/downloads/interconnect";
     private static final String PROCESSED_DIR = "/home/Processed_Files/einv/interconnect_bills";
 
-    @Scheduled(fixedRate = 60 * 60 * 1000)
+//    @Scheduled(fixedRate = 60 * 60 * 1000)
     public void scheduledInvoiceProcessing() {
         System.out.println("⏳ Scheduled job started...");
         downloadAndSubmitInvoices("interconnect_bills");
@@ -118,8 +118,15 @@ public class InterConnectBills {
                     byte[] modifiedPdf = addQrAndIrnToPdf(downloaded, qrBase64, irn);
 //                    inventoryFileService.savePdf(invoiceIdentifier, modifiedPdf);
 
-                    System.out.println("✅ Submitted Successfully. Moving file.");
-                    moveFileToProcessed(downloaded, "DONE", fileName, invoiceIdentifier);
+                    // ✅ Save modified file instead of moving original
+                    saveProcessedFile("DONE", fileName, invoiceIdentifier, modifiedPdf);
+
+                    System.out.println("✅ Submitted Successfully. Saved modified file.");
+
+                    // delete temp file
+                    if (downloaded.exists()) {
+                        downloaded.delete();
+                    }
                 } else {
                     System.err.println("❌ Submission failed. Moving file.");
                     moveFileToProcessed(downloaded, "FAILED", fileName, invoiceIdentifier);
@@ -164,10 +171,27 @@ public class InterConnectBills {
         }
     }
 
-    // ✅ Adjusted: prefix + fileName + invoiceIdentifier
-    // inside InterConnectBills.java
+    // ✅ Save processed PDF with QR + IRN
+    private void saveProcessedFile(String prefix, String fileName, String invoiceIdentifier, byte[] pdfBytes) {
+        try {
+            File processedDir = new File(PROCESSED_DIR);
+            if (!processedDir.exists()) processedDir.mkdirs();
 
-    // ✅ Adjusted: prefix + fileName + invoiceIdentifier
+            String newFileName = prefix + "_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
+            File newFile = new File(processedDir, newFileName);
+
+            try (FileOutputStream fos = new FileOutputStream(newFile)) {
+                fos.write(pdfBytes);
+            }
+
+            System.out.println("📂 Saved processed PDF with QR + IRN: " + newFile.getAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("⚠️ Failed to save processed PDF.");
+            e.printStackTrace();
+        }
+    }
+
+    // ❌ On failure still move original file
     private void moveFileToProcessed(File original, String prefix, String fileName, String invoiceIdentifier) {
         try {
             File processedDir = new File(PROCESSED_DIR);
@@ -176,10 +200,8 @@ public class InterConnectBills {
             String newFileName = prefix + "_" + fileName.replace(".pdf", "") + "_" + invoiceIdentifier + ".pdf";
             File newFile = new File(processedDir, newFileName);
 
-            // ✅ Skip if file already exists
             if (newFile.exists()) {
                 System.out.println("⏭️ File already exists in processed folder, skipping: " + newFile.getAbsolutePath());
-                // also delete the original temp file if needed
                 if (original.exists()) {
                     original.delete();
                 }
@@ -193,7 +215,6 @@ public class InterConnectBills {
             e.printStackTrace();
         }
     }
-
 
     private String[] extractQrAndIrnFromResponse(String resultJson) {
         JSONObject root = new JSONObject(resultJson);

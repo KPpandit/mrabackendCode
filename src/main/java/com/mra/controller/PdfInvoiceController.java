@@ -13,7 +13,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/invoice")
 @RequiredArgsConstructor
-
 public class PdfInvoiceController {
 
     private final PdfInvoiceService pdfInvoiceService;

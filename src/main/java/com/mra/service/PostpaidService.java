@@ -31,12 +31,12 @@ import java.util.Map;
 public class PostpaidService {
 
     private final MRAService mraService;
-    private static final String BASE_URL = "http://41.222.103.118:22221";
-    // private static final String BASE_URL = "http://172.28.5.2:22221";
+//    private static final String BASE_URL = "http://41.222.103.118:22221";
+     private static final String BASE_URL = "http://172.28.5.2:22221";
     private static final String DOWNLOAD_DIR = "/home/downloads/bills";
     private static final String PROCESSED_DIR = "/home/Processed_Files/einv/bills";
 
-    @Scheduled(fixedRate = 60 * 60 * 1000)
+//    @Scheduled(fixedRate = 60 * 60 * 1000)
     public void scheduledInvoiceProcessing() {
         System.out.println("⏳ Scheduled job started...");
         downloadAndSubmitInvoices("bills");

@@ -32,7 +32,8 @@ public class SalesReturnService {
 
     private final MRAService mraService;
 
-    private static final String BASE_URL = "http://41.222.103.118:22221";
+//  private static final String BASE_URL = "http://41.222.103.118:22221";
+    private static final String BASE_URL = "http://172.28.5.2:22221";
     private static final String DOWNLOAD_DIR = "/home/downloads/salesReturn";
     private static final String PROCESSED_DIR = "/home/Processed_Files/einv/sales_return";
 
